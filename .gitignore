@@ -9,6 +9,10 @@
 !/lab/project-files/dynamips/*/configs/
 /lab/project-files/dynamips/*/configs/*
 !/lab/project-files/dynamips/*/configs/*_startup-config.cfg
+/lab/project-files/dynamips/*.ghost
+/lab/project-files/dynamips/dynamips_i*_log.txt
+/lab/project-files/dynamips/dynamips_i*_stdout.txt
+/lab/project-files/dynamips/ilt_*
 /lab/project-files/vpcs/*/*
 !/lab/project-files/vpcs/*/startup.vpc
 

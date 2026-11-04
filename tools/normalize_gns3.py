@@ -23,9 +23,9 @@ for node in project["topology"]["nodes"]:
 
     for key in ("hda_disk_image", "hdb_disk_image", "hdc_disk_image", "hdd_disk_image", "cdrom_image"):
         image = properties.get(key)
-        if image:
-            path = Path(image)
-            if path.is_absolute() and path.is_relative_to(lab):
+        if image and Path(image).is_absolute():
+            path = Path(image).resolve()
+            if path.is_relative_to(lab):
                 properties[key] = path.relative_to(lab).as_posix()
 
 serialized = json.dumps(project, ensure_ascii=False, sort_keys=True, indent=4) + "\n"
