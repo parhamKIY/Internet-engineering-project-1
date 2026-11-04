@@ -15,5 +15,6 @@
 # Local router images, logs, and Office lock files
 *.image
 *.image.md5sum
+*.qcow2.md5sum
 *.log
 ~$*.docx
