@@ -1,79 +1,79 @@
-# شبیه‌سازی شبکهٔ ارتباطی مراکز درمانی و فرماندهی
+# Emergency Healthcare Network Lab
 
-**پروژهٔ درس مهندسی اینترنت** · پیاده‌سازی و آزمایش در `GNS3` · توپولوژی مسیریابی پویا، سرویس وب مرکزی و ترجمهٔ نشانی با `NAT/PAT`
+**Internet Engineering course project** · Built and tested in `GNS3` · Dynamic routing, a central HTTP service, and `NAT/PAT`
 
-این مخزن یک لَب شبکهٔ قابل اجرا در `GNS3` و شواهد آزمایش‌های آن را نگه می‌دارد. سناریو، سه روتر را در قالب یک مثلث به هم متصل می‌کند تا دو بیمارستان و مرکز فرماندهی هم در حالت عادی ارتباط داشته باشند و هم امکان آزمودن مسیر جایگزین فراهم شود.
+This repository contains a runnable network lab and evidence from its experiments. Three routers form a triangle so two hospitals and a command center can communicate over the normal paths, with alternate paths available for a planned failover test.
 
-![نمای نهایی توپولوژی لَب](docs/images/topology.png)
+![Final lab topology](docs/images/topology.png)
 
-> **وضعیت صادقانهٔ پروژه:** طراحی، آدرس‌دهی، `RIPv2`، سرویس `HTTP` و آزمایش‌های `NAT/PAT` انجام و مستند شده‌اند. قطع لینک‌ها و مشاهدهٔ همگرایی مسیر جایگزین هنوز آزمایش نهایی نشده است؛ بنابراین افزونگی مسیریابی در این نسخه **هدف طراحی** است، نه نتیجهٔ تأییدشده.
+> **Project status:** Topology, addressing, `RIPv2`, the HTTP service, and `NAT/PAT` experiments have been implemented and documented. Link failure and route convergence have **not yet been tested**. Redundant routing is therefore a design goal, not a verified result.
 
-## فهرست مطالب
+## Contents
 
-- [هدف و سناریو](#هدف-و-سناریو)
-- [توپولوژی](#توپولوژی)
-- [طرح آدرس‌دهی](#طرح-آدرس‌دهی)
-- [چه چیزی پیاده‌سازی و آزمایش شد؟](#چه-چیزی-پیاده‌سازی-و-آزمایش-شد)
-- [ساختار مخزن](#ساختار-مخزن)
-- [بازکردن و اجرای لَب](#بازکردن-و-اجرای-لب)
-- [آزمون‌های باقی‌مانده](#آزمون‌های-باقی‌مانده)
-- [گزارش کامل و فایل‌های ضبط](#گزارش-کامل-و-فایل‌های-ضبط)
+- [Scenario and goals](#scenario-and-goals)
+- [Topology](#topology)
+- [Address plan](#address-plan)
+- [Implementation and verified results](#implementation-and-verified-results)
+- [Repository layout](#repository-layout)
+- [Open and run the lab](#open-and-run-the-lab)
+- [Remaining work](#remaining-work)
+- [Full report and packet captures](#full-report-and-packet-captures)
 
-## هدف و سناریو
+## Scenario and goals
 
-سناریو یک شبکهٔ ارتباطی اضطراری را مدل می‌کند:
+The lab models an emergency communications network:
 
-- بیمارستان اول دارای شبکهٔ کارکنان و شبکهٔ مهمان است.
-- بیمارستان دوم شبکهٔ کارکنان خودش را دارد.
-- مرکز فرماندهی میزبان وب‌سرور مرکزی است.
-- یک شبکهٔ بیرونی شبیه‌سازی‌شده برای آزمودن دسترسی و `NAT/PAT` استفاده می‌شود.
-- روترهای `R1`، `R2` و `R3` سه لینک مستقیم دارند؛ این شکل، دو راه بالقوه از هر بیمارستان تا مرکز فرماندهی ایجاد می‌کند.
+- Hospital A has a staff LAN and a guest LAN.
+- Hospital B has its own staff LAN.
+- The command center hosts the central web server.
+- A simulated external network is used to test reachability and `NAT/PAT`.
+- Routers `R1`, `R2`, and `R3` have direct links between each pair, creating two potential routes from either hospital to the command center.
 
-هدف آموزشی، دیدن نقش زیرشبکه‌بندی `VLSM`، دروازهٔ پیش‌فرض، `ARP`، مسیریابی پویا با `RIPv2`، درخواست `HTTP` روی `TCP` و ترجمهٔ مبدأ با `NAT/PAT` در یک سناریوی یکپارچه است.
+The lab demonstrates `VLSM` subnetting, default gateways, `ARP`, dynamic routing with `RIPv2`, `HTTP` over `TCP`, and source address translation with `NAT/PAT` in one integrated scenario.
 
-## توپولوژی
+## Topology
 
-در این لَب **۳ روتر، ۴ سوئیچ، ۶ رایانهٔ `VPCS` و ۲ ماشین `Tiny Core Linux`** داریم. ارتباط داخلی روترها به صورت مثلثی است؛ `R3` به LAN مرکز فرماندهی و شبکهٔ بیرونی متصل می‌شود.
+The lab has **3 routers, 4 Ethernet switches, 6 `VPCS` hosts, and 2 `Tiny Core Linux` machines**. The router links form a triangle; `R3` also connects to the command-center LAN and the simulated external network.
 
-| بخش | شبکه / دستگاه‌ها | اتصال روتر |
+| Segment | Network / devices | Router connection |
 |---|---|---|
-| کارکنان بیمارستان اول | `PC-A1`، `PC-A2`، `Linux-Client` | `R1 Fa0/0` |
-| مهمان بیمارستان اول | `PC-Guest` | `R1 Fa0/1` |
-| کارکنان بیمارستان دوم | `PC-B1`، `PC-B2` | `R2 Fa0/0` |
-| مرکز فرماندهی | `Web-Server` | `R3 Fa0/0` |
-| شبکهٔ بیرونی آزمایش | `PC-External` | `R3 Fa0/1` |
-| لینک‌های روتر به روتر | `R1–R2`، `R1–R3`، `R2–R3` | پورت‌های `FastEthernet` جدول آدرس‌دهی |
+| Hospital A staff | `PC-A1`, `PC-A2`, `Linux-Client` | `R1 Fa0/0` |
+| Hospital A guest | `PC-Guest` | `R1 Fa0/1` |
+| Hospital B staff | `PC-B1`, `PC-B2` | `R2 Fa0/0` |
+| Command center | `Web-Server` | `R3 Fa0/0` |
+| Simulated external network | `PC-External` | `R3 Fa0/1` |
+| Inter-router links | `R1–R2`, `R1–R3`, `R2–R3` | `FastEthernet` interfaces in the address plan |
 
-## طرح آدرس‌دهی
+## Address plan
 
-فضای داخلی از `10.40.0.0/24` با `VLSM` تقسیم شده است. ظرفیت جدول، تعداد نشانی‌های قابل تخصیص به میزبان‌ها را نشان می‌دهد؛ نشانی شبکه و پخش در آن شمرده نشده‌اند.
+The internal address space `10.40.0.0/24` is divided with `VLSM`. Usable capacity excludes the network and broadcast addresses.
 
-| بخش | شبکه | ماسک | ظرفیت میزبان | دروازه | میزبان‌های شاخص |
+| Segment | Subnet | Mask | Usable hosts | Gateway | Key hosts |
 |---|---|---|---:|---|---|
-| کارکنان بیمارستان اول | `10.40.0.0/27` | `255.255.255.224` | ۳۰ | `10.40.0.1` | `PC-A1 .2`، `PC-A2 .3`، `Linux-Client .4` |
-| کارکنان بیمارستان دوم | `10.40.0.32/28` | `255.255.255.240` | ۱۴ | `10.40.0.33` | `PC-B1 .34`، `PC-B2 .35` |
-| مهمان بیمارستان اول | `10.40.0.48/29` | `255.255.255.248` | ۶ | `10.40.0.49` | `PC-Guest .50` |
-| مرکز فرماندهی | `10.40.0.56/29` | `255.255.255.248` | ۶ | `10.40.0.57` | `Web-Server .58` |
-| لینک `R1–R3` | `10.40.0.64/30` | `255.255.255.252` | ۲ | — | `R1 .65` ↔ `R3 .66` |
-| لینک `R2–R3` | `10.40.0.68/30` | `255.255.255.252` | ۲ | — | `R2 .69` ↔ `R3 .70` |
-| لینک `R1–R2` | `10.40.0.72/30` | `255.255.255.252` | ۲ | — | `R1 .73` ↔ `R2 .74` |
-| بیرونیِ شبیه‌سازی‌شده | `198.51.100.0/30` | `255.255.255.252` | ۲ | `198.51.100.1` | `R3 .1`، `PC-External .2` |
+| Hospital A staff | `10.40.0.0/27` | `255.255.255.224` | 30 | `10.40.0.1` | `PC-A1 .2`, `PC-A2 .3`, `Linux-Client .4` |
+| Hospital B staff | `10.40.0.32/28` | `255.255.255.240` | 14 | `10.40.0.33` | `PC-B1 .34`, `PC-B2 .35` |
+| Hospital A guest | `10.40.0.48/29` | `255.255.255.248` | 6 | `10.40.0.49` | `PC-Guest .50` |
+| Command center | `10.40.0.56/29` | `255.255.255.248` | 6 | `10.40.0.57` | `Web-Server .58` |
+| `R1–R3` link | `10.40.0.64/30` | `255.255.255.252` | 2 | — | `R1 .65` ↔ `R3 .66` |
+| `R2–R3` link | `10.40.0.68/30` | `255.255.255.252` | 2 | — | `R2 .69` ↔ `R3 .70` |
+| `R1–R2` link | `10.40.0.72/30` | `255.255.255.252` | 2 | — | `R1 .73` ↔ `R2 .74` |
+| Simulated external | `198.51.100.0/30` | `255.255.255.252` | 2 | `198.51.100.1` | `R3 .1`, `PC-External .2` |
 
-نشانی کوتاه‌شدهٔ `.34` در جدول یعنی `10.40.0.34` و در همان سطرِ شبکهٔ مشخص‌شده تفسیر می‌شود. در هر LAN، دروازه همان نشانی رابط روتر در آن زیرشبکه است.
+Short host values such as `.34` mean `10.40.0.34` within the subnet shown in that row. Each LAN's default gateway is the router interface address on that same subnet.
 
-## چه چیزی پیاده‌سازی و آزمایش شد؟
+## Implementation and verified results
 
-### آدرس‌دهی و ارتباط پایه
+### Addressing and basic connectivity
 
-رابط‌های LAN و لینک‌های بین روترها آدرس‌دهی و فعال شدند. نشانی‌های `VPCS` ذخیره شده‌اند. برای دو ماشین لینوکسی، آدرس و مسیر پیش‌فرض پس از راه‌اندازی مجدد نیز برقرار می‌شود.
+LAN and inter-router interfaces were addressed and brought up. `VPCS` addresses were saved. Both Linux machines were configured to restore their addresses and default routes after reboot.
 
-آزمایش‌های محلی و بین‌شبکه‌ای با `ping` و `traceroute` انجام شدند. جدول‌های `ARP` نیز نشان دادند که برای مقصد هم‌شبکه، میزبان `MAC` مقصد را پیدا می‌کند و برای مقصد خارج از شبکه، ابتدا `MAC` دروازه را به کار می‌برد. در برخی پینگ‌های اول یک بسته از دست رفت و پینگ‌های بعدی پاسخ گرفتند؛ این با زمان لازم برای حل `ARP` سازگار است. برای نسبت‌دادن قطعی علت، باید خود بسته‌های `ARP` و `ICMP` را در ضبط همان آزمایش دید.
+Local and inter-subnet connectivity was checked with `ping` and `traceroute`. `ARP` tables showed that a host resolves the destination's `MAC` address for same-subnet traffic, and resolves the gateway's `MAC` address for off-subnet traffic. Some first ping attempts lost one packet before later attempts succeeded. This is consistent with time spent resolving `ARP`; a packet capture from that exact test is needed to confirm the cause.
 
-### مسیریابی پویا با `RIPv2`
+### Dynamic routing with `RIPv2`
 
-روی هر سه روتر `RIPv2` و `no auto-summary` تنظیم شده است تا مسیرهای زیرشبکه‌ای با ماسک‌های متفاوت حفظ شوند. خروجی `show ip route` مسیرهای مستقیم (`C`) و مسیرهای آموخته‌شده با `R` را نشان داد. لینک‌های مستقیم به مرکز فرماندهی در مسیرهای دیده‌شده قابل استفاده بودند.
+`RIPv2` and `no auto-summary` were configured on all three routers so subnets with different masks remain distinct. `show ip route` showed directly connected (`C`) routes and learned (`R`) routes. The direct paths toward the command center appeared in the observed routing tables.
 
-نمونهٔ بخش مسیریابی روی هر سه روتر:
+The routing process configured on each router:
 
 ```text
 router rip
@@ -82,7 +82,7 @@ router rip
  network 10.0.0.0
 ```
 
-روی `R3` شبکهٔ بیرونی هم به فرایند مسیریابی افزوده شد؛ رابط بیرونی غیرفعال از ارسال به‌روزرسانی‌های `RIP` است:
+On `R3`, the external network was also added to `RIP`. The external interface is passive, so routing updates are not sent out to the external host:
 
 ```text
 router rip
@@ -90,37 +90,37 @@ router rip
  passive-interface FastEthernet0/1
 ```
 
-**آزمون قطع لینک و تأیید مسیر جایگزین هنوز انجام نشده است.** تا انجام آن، زمان همگرایی و تداوم ارتباط در خرابی را نتیجهٔ اندازه‌گیری‌شده تلقی نکنید.
+**Link-failure and alternate-route tests remain outstanding.** Convergence time and connectivity during a failure must not be reported as measured until those tests are performed.
 
-### وب‌سرور و ضبط `HTTP`
+### Web server and `HTTP` capture
 
-روی `Web-Server` یک پاسخ‌گوی سبک روی پورت `8080` اجرا شد. کلاینت درخواست `GET` فرستاد و پاسخ ثبت‌شده شامل `HTTP/1.0 200 OK`، نوع `text/plain` و متن `Command Center is online` با طول ۲۵ بایت بود. ضبط `Hospital-B-HTTP.pcapng` تبادل بیمارستان دوم با سرور را نگه می‌دارد.
+A lightweight response service ran on `Web-Server` at port `8080`. The client sent a `GET` request and the captured response contained `HTTP/1.0 200 OK`, content type `text/plain`, and the 25-byte body `Command Center is online`. The capture [Hospital-B-HTTP.pcapng](Hospital-B-HTTP.pcapng) records the request from Hospital B to the server.
 
-![درخواست GET و پاسخ 200 OK روی پورت 8080](docs/images/http-wireshark.png)
+![GET request and 200 OK response on port 8080](docs/images/http-wireshark.png)
 
-فیلتر نمایشی برای دیدن این ارتباط در `Wireshark`:
+Display filter used in `Wireshark`:
 
 ```text
 tcp.port == 8080
 ```
 
-### شبکهٔ بیرونی آزمایش و `NAT/PAT`
+### Simulated external network and `NAT/PAT`
 
-روی `R3`، رابط‌های داخلی با `ip nat inside` و رابط متصل به `PC-External` با `ip nat outside` علامت‌گذاری شدند. فهرست دسترسی، چهار شبکهٔ داخلی را انتخاب می‌کند و دستور `overload` چند جریان را با یک نشانی بیرونی مشترک عبور می‌دهد.
+On `R3`, the internal interfaces were marked `ip nat inside`; the interface connected to `PC-External` was marked `ip nat outside`. An access list selects the four internal networks, and `overload` lets multiple flows share the outside interface address.
 
-آزمایش‌ها شامل پینگ از شبکهٔ داخلی به `PC-External` و درخواست `TCP` از `Linux-Client` به وب‌سرور آزمایشی بیرونی روی پورت `8080` بودند. برای آزمون `TCP`، ماشین `Web-Server` موقتاً به شبکهٔ بیرونی منتقل و نشانی `198.51.100.2` به آن داده شد؛ پس از آزمون، توپولوژی به حالت پایه برگشت. برای جریان ثبت‌شده، مبدأ `10.40.0.4:59761` در سمت بیرون به `198.51.100.1:59761` ترجمه شد و مقصد `198.51.100.2:8080` بود. ضبط‌ها هم درخواست و پاسخ را روی سمت داخلی و هم نشانی ترجمه‌شده را روی سمت بیرونی نشان می‌دهند.
+Experiments included pings from an internal host to `PC-External` and a `TCP` request from `Linux-Client` to an external test web server on port `8080`. For the `TCP` test, `Web-Server` was temporarily moved to the external network and assigned `198.51.100.2`; the original topology was restored afterward. In the captured flow, source `10.40.0.4:59761` was translated to `198.51.100.1:59761`, and the destination was `198.51.100.2:8080`. Captures show the request and response on the inside and the translated address on the outside.
 
-![تبادل ICMP در سمت داخلی R3](docs/images/nat-inside-wireshark.png)
+![ICMP exchange on the inside of R3](docs/images/nat-inside-wireshark.png)
 
-![تبادل ICMP در سمت بیرونی R3](docs/images/nat-outside-wireshark.png)
+![ICMP exchange on the outside of R3](docs/images/nat-outside-wireshark.png)
 
-![نمونهٔ جدول ترجمهٔ NAT روی R3](docs/images/nat-translations.png)
+![Example NAT translation table on R3](docs/images/nat-translations.png)
 
-![پینگ موفق از میزبان بیرونی به دروازهٔ R3](docs/images/external-ping.png)
+![Successful ping from the external host to the R3 gateway](docs/images/external-ping.png)
 
-![نمونهٔ ترجمهٔ جریان TCP روی R3](docs/images/pat-tcp-translation.png)
+![Example TCP translation on R3](docs/images/pat-tcp-translation.png)
 
-نمونهٔ تنظیم `NAT/PAT` روی `R3`؛ چهار ورودی `ACL` دقیقاً شبکه‌های داخلی این طرح را پوشش می‌دهند:
+Core `NAT/PAT` configuration on `R3`. The four access-list entries match the internal subnets in this design:
 
 ```text
 interface FastEthernet0/0
@@ -131,6 +131,7 @@ interface FastEthernet2/0
  ip nat inside
 interface FastEthernet0/1
  ip nat outside
+exit
 access-list 10 permit 10.40.0.0 0.0.0.31
 access-list 10 permit 10.40.0.32 0.0.0.15
 access-list 10 permit 10.40.0.48 0.0.0.7
@@ -138,49 +139,44 @@ access-list 10 permit 10.40.0.56 0.0.0.7
 ip nat inside source list 10 interface FastEthernet0/1 overload
 ```
 
-`198.51.100.0/30` در این پروژه یک شبکهٔ بیرونیِ **آزمایشی و شبیه‌سازی‌شده** است؛ اتصال واقعی به اینترنت فراهم نمی‌کند. در این IOS شبیه‌سازی‌شده، برای عبور ترافیک پس از مشاهدهٔ ترجمه‌های `NAT` از `no ip cef` استفاده شد. این رفتار به محیط همین لَب مربوط است و نباید به‌عنوان راهکار عمومی برای شبکه‌های واقعی برداشت شود.
+`198.51.100.0/30` is a simulated test network, not a real Internet connection. In this simulated IOS environment, `no ip cef` was used after translations appeared without traffic passing. Treat this as a workaround specific to this lab, not as general advice for production networks.
 
-## ساختار مخزن
+## Repository layout
 
-| مسیر | محتوا |
+| Path | Contents |
 |---|---|
-| `lab/proj-1.gns3` | فایل اصلی توپولوژی `GNS3` |
-| `lab/images/` | دیسک‌های ماشین‌های لینوکس که در این مخزن قرار دارند |
-| `lab/project-files/` | پیکربندی‌های ذخیره‌شده و فایل‌های پروژهٔ `GNS3` |
-| `docs/Internet_Engineering_Progress_Report_FA.docx` | گزارش فارسی کامل با توضیح مراحل، فرمان‌ها و شواهد |
-| `docs/IE_P1.pdf` | صورت پروژه |
-| `docs/images/` | تصاویر توپولوژی و آزمایش‌ها برای این صفحه |
-| `Hospital-B-HTTP.pcapng` | ضبط آزمایش وب از بیمارستان دوم |
-| `NAT-PAT-Inside-R1-R3.pcapng` | ضبط ترافیک سمت داخلی `R3` |
-| `NAT-PAT-Outside-R3-PC-External.pcapng` | ضبط ترافیک سمت بیرونی `R3` |
+| `lab/proj-1.gns3` | Main `GNS3` topology file |
+| `lab/images/` | Linux machine disks included in this repository |
+| `lab/project-files/` | Saved `GNS3` project and device configuration files |
+| `docs/Internet_Engineering_Progress_Report_FA.docx` | Detailed Persian report with steps, commands, and evidence |
+| `docs/IE_P1.pdf` | Project specification |
+| `docs/images/` | Topology and experiment images used on this page |
+| [Hospital-B-HTTP.pcapng](Hospital-B-HTTP.pcapng) | Hospital B web experiment capture |
+| [NAT-PAT-Inside-R1-R3.pcapng](NAT-PAT-Inside-R1-R3.pcapng) | Capture from the inside link of `R3` |
+| [NAT-PAT-Outside-R3-PC-External.pcapng](NAT-PAT-Outside-R3-PC-External.pcapng) | Capture from the outside link of `R3` |
 
-## بازکردن و اجرای لَب
+## Open and run the lab
 
-۱. `GNS3 2.2.61` را نصب کنید و مخزن را کلون کنید.
+1. Install `GNS3 2.2.61` and clone this repository.
+2. Open `lab/proj-1.gns3` in `GNS3`.
+3. The lab uses a `Cisco C3725` router with `IOS 12.4(15)T14`. The IOS image is not included; configure the router template with an image you are authorized to use.
+4. The current topology file points to Linux disks under `C:/Users/user/GNS3/projects/proj/images/`. If that path does not exist on your computer, edit both `QEMU` nodes in `GNS3` and select their disk files from `lab/images/`.
+5. Start the routers and hosts. The Persian report at `docs/Internet_Engineering_Progress_Report_FA.docx` contains detailed commands and a step-by-step record.
+6. Open the supplied `pcapng` captures in `Wireshark`, or capture on the appropriate link while repeating an experiment.
 
-۲. فایل `lab/proj-1.gns3` را در `GNS3` باز کنید.
+## Remaining work
 
-۳. این لَب با روتر `Cisco C3725` و `IOS 12.4(15)T14` ساخته شده است. فایل `IOS` همراه مخزن نیست و باید از ایمیج مجاز و تنظیم محلی خودتان استفاده کنید.
+The next major task is to verify routing redundancy in the running lab:
 
-۴. فایل توپولوژی فعلی، نشانی محلی دیسک‌های لینوکس را به مسیر `C:/Users/user/GNS3/projects/proj/images/` ارجاع می‌دهد. اگر این مسیر در رایانهٔ شما وجود ندارد، تنظیم هر دو گرهٔ `QEMU` را در `GNS3` باز کنید و دیسک متناظر را از `lab/images/` انتخاب کنید.
+1. From the normal state, record reachability to `10.40.0.58` and routing tables on `R1`, `R2`, and `R3`.
+2. Shut down both ends of only the `R1–R3` link. Recheck the route and connectivity while `RIPv2` converges. Expected path: `R1` → `R2` → `R3`.
+3. Restore that link and confirm the normal state.
+4. Repeat separately for the `R2–R3` link. Expected path: `R2` → `R1` → `R3`.
+5. Record outage duration, time until replies resume, the new route, and packet-capture evidence. Do not infer these results from the topology alone.
+6. Add the verified failover evidence to the final report and presentation.
 
-۵. ماشین‌ها و روترها را روشن کنید. برای ترتیب بازبینی و فرمان‌های دقیق، از گزارش فارسی در `docs/Internet_Engineering_Progress_Report_FA.docx` استفاده کنید.
+## Full report and packet captures
 
-۶. فایل‌های `pcapng` را با `Wireshark` باز کنید یا هنگام اجرای دوبارهٔ آزمون از رابط مناسب ضبط بگیرید.
+The detailed [project progress report](docs/Internet_Engineering_Progress_Report_FA.docx) documents the work sequence, full address plan, command explanations, evidence, troubleshooting, and remaining tests.
 
-## آزمون‌های باقی‌مانده
-
-مهم‌ترین کار بعدی، تأیید عملی افزونگی است:
-
-۱. از وضعیت عادی، دسترسی به `10.40.0.58` و جدول مسیرهای روترهای `R1`، `R2` و `R3` را ثبت کنید.
-۲. فقط لینک `R1–R3` را در هر دو سر خاموش کنید؛ سپس مسیر و دسترسی را تا همگرایی `RIPv2` دوباره بررسی کنید. مسیر مورد انتظار از `R1` به `R2` و سپس `R3` است.
-۳. لینک را برگردانید و سلامت حالت عادی را تأیید کنید.
-۴. همین آزمون را جداگانه برای لینک `R2–R3` انجام دهید. مسیر مورد انتظار از `R2` به `R1` و سپس `R3` است.
-۵. زمان قطعی، زمان بازگشت پاسخ، مسیر جدید و شواهد `Wireshark` را ثبت کنید؛ از روی طرح به‌تنهایی نتیجه‌گیری نکنید.
-۶. گزارش نهایی و ارائه را با شواهد واقعی آزمون افزونگی تکمیل کنید.
-
-## گزارش کامل و فایل‌های ضبط
-
-گزارش Word جزئیات توالی کار، جدول کامل نشانی‌ها، دلیل فرمان‌ها، شواهد، خطاهای تجربه‌شده و راهنمای آزمون باقی‌مانده را شرح می‌دهد: [گزارش پیشرفت پروژه](docs/Internet_Engineering_Progress_Report_FA.docx).
-
-برای مشاهدهٔ بسته‌ها، فایل‌های `pcapng` بالا را در `Wireshark` باز کنید. تصویرهای این صفحه برای مرور سریع‌اند و فایل ضبط‌شده امکان بررسی جزئیات هر بسته را می‌دهد.
+Open the `pcapng` files in `Wireshark` to inspect individual packets. The images above provide a quick overview; the captures retain packet-level details.
