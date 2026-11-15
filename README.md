@@ -10,7 +10,7 @@ This repository contains a runnable network lab and evidence from its experiment
 
 ## Contents
 
-- [Scenario and goals](#scenario-and-goals)
+- [Project objective and required outcomes](#project-objective-and-required-outcomes)
 - [Topology](#topology)
 - [Address plan](#address-plan)
 - [Implementation and verified results](#implementation-and-verified-results)
@@ -19,17 +19,30 @@ This repository contains a runnable network lab and evidence from its experiment
 - [Remaining work](#remaining-work)
 - [Full report and packet captures](#full-report-and-packet-captures)
 
-## Scenario and goals
+## Project objective and required outcomes
 
-The lab models an emergency communications network:
+### What the assignment asks us to build
 
-- Hospital A has a staff LAN and a guest LAN.
-- Hospital B has its own staff LAN.
-- The command center hosts the central web server.
-- A simulated external network is used to test reachability and `NAT/PAT`.
-- Routers `R1`, `R2`, and `R3` have direct links between each pair, creating two potential routes from either hospital to the command center.
+Design, implement, and test an emergency communications network connecting two hospitals with a crisis command center. Each hospital has its own staff network; Hospital A also has a separate guest network. The command center must provide a central web service, and both hospitals must be able to reach it across the network.
 
-The lab demonstrates `VLSM` subnetting, default gateways, `ARP`, dynamic routing with `RIPv2`, `HTTP` over `TCP`, and source address translation with `NAT/PAT` in one integrated scenario.
+The three routers must form a triangle. In normal operation, each hospital must reach the command center over its direct link. If either direct hospital-to-command-center link fails, `RIPv2` must learn and use the alternate path through the other hospital after convergence, restoring access without manually adding a replacement route. When the failed link is restored, the direct path must become preferred again.
+
+The assignment also requires private internal hosts, including the guest network, to reach a simulated external network through `NAT/PAT` on `R3`. The work is to be demonstrated with connectivity tests, routing and translation tables, and packet analysis; the objective is an operational and explainable lab, not a complex web application.
+
+### Acceptance criteria and current status
+
+| Assignment requirement | What counts as evidence | Status in this lab |
+|---|---|---|
+| Build the three-router triangle, site LANs, and Hospital A guest LAN | Matching topology, separate LANs, and complete non-overlapping IPv4/VLSM plan | **Implemented** |
+| Meet the minimum usable-host capacities | Hospital A staff: 20; Hospital B staff: 10; command center: 4; Hospital A guest: 5; plus three inter-router `/30` links and external `198.51.100.0/30` | **Address plan implemented** |
+| Verify local and inter-site connectivity, gateways, and `ARP` behavior | Successful host/gateway and cross-network tests; explain same-LAN versus routed traffic | **Tested and documented** |
+| Configure `RIPv2` and examine route selection | Learned routes in router tables; direct command-center path in normal operation | **Configured; normal routes verified** |
+| Provide the central web service to clients in both hospitals | Run separate tests from each hospital and inspect `TCP` plus `HTTP` request/response in `Wireshark` | **Tested from both; Hospital B capture saved** |
+| Provide external reachability with `NAT/PAT` | Test staff networks at both hospitals and Hospital A guest network; inspect translations and return traffic, including at least one `TCP` or `UDP` flow | **Tested; ICMP and TCP translations recorded** |
+| Demonstrate both direct-link failures and recovery | Test `R1–R3` and `R2–R3` separately, record alternate route after convergence, then restore each link and verify direct-path preference | **Not yet tested** |
+| Analyze and explain the results for the final presentation | Use `ping`, `traceroute`, route/NAT tables, and suitable `ARP`, `ICMP`, `RIP`, `TCP`, and `HTTP` packet evidence | **Partially documented; failover evidence and final presentation remain** |
+
+The failure tests are the key unfinished requirement. The alternate paths shown by the triangle and routing design are expected paths; they are not confirmed until the two failure scenarios and link restoration are run and recorded.
 
 ## Topology
 
