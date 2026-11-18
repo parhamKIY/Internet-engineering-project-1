@@ -1,195 +1,151 @@
-# Emergency Healthcare Network Lab
+# Emergency Communications Network Lab
 
-**Internet Engineering course project** · Built and tested in `GNS3` · Dynamic routing, a central HTTP service, and `NAT/PAT`
+**University of Isfahan · Internet Engineering · Project 1**
 
-This repository contains a runnable network lab and evidence from its experiments. Three routers form a triangle so two hospitals and a command center can communicate over the normal paths, with alternate paths available for a planned failover test.
+Two hospitals depend on a crisis command center for emergency updates. This GNS3 lab shows how both hospitals can reach the center's web service, recover access after a direct link fails, and use a shared gateway to reach a simulated external network.
 
-![Final lab topology](docs/images/topology.png)
+[Assignment brief (Persian)](docs/IE_P1.pdf) · [Final report (Persian)](docs/Internet_Engineering_Final_Report_FA.docx) · [Open the lab](#run-the-lab) · [Failover results](#link-failure-and-recovery)
 
-> **Project status:** Topology, addressing, `RIPv2`, the HTTP service, and `NAT/PAT` experiments have been implemented and documented. Link failure and route convergence have **not yet been tested**. Redundant routing is therefore a design goal, not a verified result.
+![GNS3 topology with Hospital A, Hospital B, the command center, and the simulated external host](docs/images/topology.png)
 
-## Contents
+## What the assignment asks for
 
-- [Project objective and required outcomes](#project-objective-and-required-outcomes)
-- [Topology](#topology)
-- [Address plan](#address-plan)
-- [Implementation and verified results](#implementation-and-verified-results)
-- [Repository layout](#repository-layout)
-- [Open and run the lab](#open-and-run-the-lab)
-- [Remaining work](#remaining-work)
-- [Full report and packet captures](#full-report-and-packet-captures)
+The assignment calls for an emergency communications network linking Hospital A, Hospital B, and a crisis command center. Each site has a router, and the three routers form a triangle. Each hospital normally uses its direct link to reach the central web service. If that link fails, the hospital must regain access through the other hospital once `RIPv2` converges, without adding a static route. Restoring the failed link must restore the direct path. A temporary interruption during convergence is allowed.
 
-## Project objective and required outcomes
+The design also calls for separate staff and guest LANs at Hospital A, a staff LAN at Hospital B, and a LAN for the command center. The assignment provides `10.40.0.0/24` for the internal address plan, requires a separate `/30` for each router link, and reserves `198.51.100.0/30` for the simulated external segment. Both staff networks and the guest network must reach that segment through `NAT/PAT` on `R3`.
 
-### What the assignment asks us to build
+| Required demonstration | Result in the final report |
+| --- | --- |
+| Address the four LANs and three router links with non-overlapping subnets | The VLSM plan meets the required capacities. Local host and gateway tests succeeded. |
+| Explain local and routed forwarding | Wireshark captures show a host resolving the peer's MAC address on the same subnet and the gateway's MAC address for a remote subnet. |
+| Route across sites with `RIPv2` | All three routers exchanged routes. Each hospital used its direct link to reach the command center in the baseline tests. |
+| Serve HTTP from the command center | A Linux client received the expected response from each hospital in separate tests. The Hospital B capture shows the TCP handshake, HTTP request and response, and connection teardown. |
+| Translate traffic at the external gateway | Both staff LANs and the guest LAN reached the external host. Captures show the address rewrite on either side of `R3`, and the NAT table records a separate TCP test. |
+| Recover from either direct-link failure | Both links were disabled and restored in separate experiments. Each hospital regained ping and HTTP access on its alternate path. Routing tables show the direct paths were preferred again after restoration. |
 
-Design, implement, and test an emergency communications network connecting two hospitals with a crisis command center. Each hospital has its own staff network; Hospital A also has a separate guest network. The command center must provide a central web service, and both hospitals must be able to reach it across the network.
+## Topology and IPv4 plan
 
-The three routers must form a triangle. In normal operation, each hospital must reach the command center over its direct link. If either direct hospital-to-command-center link fails, `RIPv2` must learn and use the alternate path through the other hospital after convergence, restoring access without manually adding a replacement route. When the failed link is restored, the direct path must become preferred again.
+The lab uses three Cisco C3725 routers, four Ethernet switches, six VPCS hosts, and two Tiny Core Linux machines under QEMU. `R1` connects Hospital A's staff and guest LANs through separate interfaces. `R2` serves Hospital B staff. `R3` connects the web server and the simulated external host.
 
-The assignment also requires private internal hosts, including the guest network, to reach a simulated external network through `NAT/PAT` on `R3`. The work is to be demonstrated with connectivity tests, routing and translation tables, and packet analysis; the objective is an operational and explainable lab, not a complex web application.
+| Segment | Subnet | Usable addresses | Required capacity | Gateway and hosts |
+| --- | --- | --- | --- | --- |
+| Hospital A staff | `10.40.0.0/27` | `10.40.0.1–10.40.0.30` (30) | 20 | `R1 Fa0/0` at `10.40.0.1`. Hosts `PC-A1` (.2), `PC-A2` (.3), `Linux-Client` (.4). |
+| Hospital B staff | `10.40.0.32/28` | `10.40.0.33–10.40.0.46` (14) | 10 | `R2 Fa0/0` at `10.40.0.33`. Hosts `PC-B1` (.34), `PC-B2` (.35). |
+| Hospital A guest | `10.40.0.48/29` | `10.40.0.49–10.40.0.54` (6) | 5 | `R1 Fa0/1` at `10.40.0.49`. Host `PC-Guest` (.50). |
+| Command center | `10.40.0.56/29` | `10.40.0.57–10.40.0.62` (6) | 4 | `R3 Fa0/0` at `10.40.0.57`. Host `Web-Server` (.58). |
+| Simulated external | `198.51.100.0/30` | `198.51.100.1–198.51.100.2` (2) | 2 link endpoints | `R3 Fa0/1` at `198.51.100.1` and `PC-External` at `198.51.100.2`. |
 
-### Acceptance criteria and current status
+The shorthand `.34`, for example, means `10.40.0.34` in the Hospital B staff LAN. Each LAN uses the first usable address for its router interface. Usable capacity includes the gateway and excludes the network and broadcast addresses.
 
-| Assignment requirement | What counts as evidence | Status in this lab |
-|---|---|---|
-| Build the three-router triangle, site LANs, and Hospital A guest LAN | Matching topology, separate LANs, and complete non-overlapping IPv4/VLSM plan | **Implemented** |
-| Meet the minimum usable-host capacities | Hospital A staff: 20; Hospital B staff: 10; command center: 4; Hospital A guest: 5; plus three inter-router `/30` links and external `198.51.100.0/30` | **Address plan implemented** |
-| Verify local and inter-site connectivity, gateways, and `ARP` behavior | Successful host/gateway and cross-network tests; explain same-LAN versus routed traffic | **Tested and documented** |
-| Configure `RIPv2` and examine route selection | Learned routes in router tables; direct command-center path in normal operation | **Configured; normal routes verified** |
-| Provide the central web service to clients in both hospitals | Run separate tests from each hospital and inspect `TCP` plus `HTTP` request/response in `Wireshark` | **Tested from both; Hospital B capture saved** |
-| Provide external reachability with `NAT/PAT` | Test staff networks at both hospitals and Hospital A guest network; inspect translations and return traffic, including at least one `TCP` or `UDP` flow | **Tested; ICMP and TCP translations recorded** |
-| Demonstrate both direct-link failures and recovery | Test `R1–R3` and `R2–R3` separately, record alternate route after convergence, then restore each link and verify direct-path preference | **Not yet tested** |
-| Analyze and explain the results for the final presentation | Use `ping`, `traceroute`, route/NAT tables, and suitable `ARP`, `ICMP`, `RIP`, `TCP`, and `HTTP` packet evidence | **Partially documented; failover evidence and final presentation remain** |
+| Router link | Subnet | Endpoint 1 | Endpoint 2 |
+| --- | --- | --- | --- |
+| `R1–R3` | `10.40.0.64/30` | `R1 Fa1/0 · 10.40.0.65` | `R3 Fa1/0 · 10.40.0.66` |
+| `R2–R3` | `10.40.0.68/30` | `R2 Fa0/1 · 10.40.0.69` | `R3 Fa2/0 · 10.40.0.70` |
+| `R1–R2` | `10.40.0.72/30` | `R1 Fa2/0 · 10.40.0.73` | `R2 Fa1/0 · 10.40.0.74` |
 
-The failure tests are the key unfinished requirement. The alternate paths shown by the triangle and routing design are expected paths; they are not confirmed until the two failure scenarios and link restoration are run and recorded.
+## Link failure and recovery
 
-## Topology
+Both experiments started with all three links active. The team disabled the interfaces at both ends of one direct link, inspected the route to `10.40.0.56/29`, and tested the web server at `10.40.0.58` from the affected hospital. After each experiment, the team restored the link and confirmed that the original next hop returned.
 
-The lab has **3 routers, 4 Ethernet switches, 6 `VPCS` hosts, and 2 `Tiny Core Linux` machines**. The router links form a triangle; `R3` also connects to the command-center LAN and the simulated external network.
+| Direct link disabled | Baseline next hop | Next hop after convergence | Next hop after restoration |
+| --- | --- | --- | --- |
+| `R1–R3` | `10.40.0.66` via R3, metric **1** | `10.40.0.74` via R2, metric **2** | `10.40.0.66` via R3, metric **1** |
+| `R2–R3` | `10.40.0.70` via R3, metric **1** | `10.40.0.73` via R1, metric **2** | `10.40.0.70` via R3, metric **1** |
 
-| Segment | Network / devices | Router connection |
-|---|---|---|
-| Hospital A staff | `PC-A1`, `PC-A2`, `Linux-Client` | `R1 Fa0/0` |
-| Hospital A guest | `PC-Guest` | `R1 Fa0/1` |
-| Hospital B staff | `PC-B1`, `PC-B2` | `R2 Fa0/0` |
-| Command center | `Web-Server` | `R3 Fa0/0` |
-| Simulated external network | `PC-External` | `R3 Fa0/1` |
-| Inter-router links | `R1–R2`, `R1–R3`, `R2–R3` | `FastEthernet` interfaces in the address plan |
+Hospital A's traceroute confirmed `R1 → R2 → R3`, and Hospital B's traceroute confirmed `R2 → R1 → R3`. Each affected hospital received five replies in a post-convergence ping check and retrieved the expected HTTP response while its direct link was still down.
 
-## Address plan
+![Hospital A client receives five ping replies and traces the path through Hospital B](docs/images/failover-hospital-a-trace.jpg)
 
-The internal address space `10.40.0.0/24` is divided with `VLSM`. Usable capacity excludes the network and broadcast addresses.
+During Hospital B's continuous ping run, 413 of 543 probes received replies. This is the total for the run. The report records recovery and does not give a separate convergence time.
 
-| Segment | Subnet | Mask | Usable hosts | Gateway | Key hosts |
-|---|---|---|---:|---|---|
-| Hospital A staff | `10.40.0.0/27` | `255.255.255.224` | 30 | `10.40.0.1` | `PC-A1 .2`, `PC-A2 .3`, `Linux-Client .4` |
-| Hospital B staff | `10.40.0.32/28` | `255.255.255.240` | 14 | `10.40.0.33` | `PC-B1 .34`, `PC-B2 .35` |
-| Hospital A guest | `10.40.0.48/29` | `255.255.255.248` | 6 | `10.40.0.49` | `PC-Guest .50` |
-| Command center | `10.40.0.56/29` | `255.255.255.248` | 6 | `10.40.0.57` | `Web-Server .58` |
-| `R1–R3` link | `10.40.0.64/30` | `255.255.255.252` | 2 | — | `R1 .65` ↔ `R3 .66` |
-| `R2–R3` link | `10.40.0.68/30` | `255.255.255.252` | 2 | — | `R2 .69` ↔ `R3 .70` |
-| `R1–R2` link | `10.40.0.72/30` | `255.255.255.252` | 2 | — | `R1 .73` ↔ `R2 .74` |
-| Simulated external | `198.51.100.0/30` | `255.255.255.252` | 2 | `198.51.100.1` | `R3 .1`, `PC-External .2` |
+![Hospital B Linux client shows the continuous ping summary and receives the web response over the alternate route](docs/images/failover-hospital-b-http.jpg)
 
-Short host values such as `.34` mean `10.40.0.34` within the subnet shown in that row. Each LAN's default gateway is the router interface address on that same subnet.
+<details>
+<summary>Router output during failover and after link restoration</summary>
 
-## Implementation and verified results
+**Hospital A** · Route via `10.40.0.74` at metric 2. [Direct route after restoration](docs/images/recovery-hospital-a-route.jpg).
 
-### Addressing and basic connectivity
+![R1 routing table showing the backup route through R2 at metric 2](docs/images/failover-hospital-a-route.jpg)
 
-LAN and inter-router interfaces were addressed and brought up. `VPCS` addresses were saved. Both Linux machines were configured to restore their addresses and default routes after reboot.
+**Hospital B** · Route via `10.40.0.73` at metric 2. [Direct route after restoration](docs/images/recovery-hospital-b-route.jpg).
 
-Local and inter-subnet connectivity was checked with `ping` and `traceroute`. `ARP` tables showed that a host resolves the destination's `MAC` address for same-subnet traffic, and resolves the gateway's `MAC` address for off-subnet traffic. Some first ping attempts lost one packet before later attempts succeeded. This is consistent with time spent resolving `ARP`; a packet capture from that exact test is needed to confirm the cause.
+![R2 routing table showing the backup route through R1 at metric 2](docs/images/failover-hospital-b-route.jpg)
 
-### Dynamic routing with `RIPv2`
+</details>
 
-`RIPv2` and `no auto-summary` were configured on all three routers so subnets with different masks remain distinct. `show ip route` showed directly connected (`C`) routes and learned (`R`) routes. The direct paths toward the command center appeared in the observed routing tables.
+## Protocol and packet evidence
 
-The routing process configured on each router:
+### Local forwarding and RIPv2
 
-```text
-router rip
- version 2
- no auto-summary
- network 10.0.0.0
+`PC-A1` resolved `PC-A2` directly with ARP when both were on the staff LAN. When it pinged the guest host at `10.40.0.50`, the packet kept that destination IP and the first Ethernet frame used the MAC address of its gateway, `10.40.0.1`. [ARP and ICMP screenshot](docs/images/arp-gateway-wireshark.jpg).
+
+All three routers run `RIPv2` with automatic summarization disabled. Frame **5** of the Hospital B capture shows `R3` advertising the command-center subnet `10.40.0.56/29` with metric 1 over `UDP/520` to `224.0.0.9`. `R3` also advertises the simulated external subnet to the internal routers and suppresses updates on the external interface. [Hospital B packet capture](Hospital-B-HTTP.pcapng).
+
+### Central web service
+
+The Tiny Core web server at `10.40.0.58:8080` returns `Command Center is online`. The same Linux client tested from Hospital A at `10.40.0.4/27` and then from Hospital B at `10.40.0.36/28`. In the Hospital B capture, frames **27–29** establish the TCP connection, frame **30** contains `GET /`, and frame **32** contains `HTTP/1.0 200 OK` with a 25-byte body. Later frames show TCP teardown.
+
+![Wireshark showing the TCP handshake, HTTP GET, and 200 OK across R2–R3](docs/images/http-wireshark.png)
+
+### NAT/PAT at the external gateway
+
+`R3` uses `Fa0/1` as its outside interface. PAT lets internal hosts share `198.51.100.1` for outbound traffic. `PC-A1`, `PC-B1`, and `PC-Guest` each reached `198.51.100.2`; their ICMP translations appear in the [NAT table screenshot](docs/images/nat-translations.png).
+
+| ICMP packet with ID `0x2520` | Inside R3 | Outside R3 |
+| --- | --- | --- |
+| Echo request | `10.40.0.2 → 198.51.100.2` (frame 90) | `198.51.100.1 → 198.51.100.2` (frame 3) |
+| Echo reply | `198.51.100.2 → 10.40.0.2` (frame 91) | `198.51.100.2 → 198.51.100.1` (frame 4) |
+
+For the separate TCP test, the web server temporarily took the external address `198.51.100.2` and served port `8080`. The translation table shows `10.40.0.4:59761` mapped to `198.51.100.1:59761`. The client received the HTTP response. The web server and external host were then returned to their original locations. [TCP translation screenshot](docs/images/pat-tcp-translation.png).
+
+<details>
+<summary>Wireshark views before and after address translation</summary>
+
+**Inside R3** · The request source and reply destination are `10.40.0.2`.
+
+![Inside capture showing the private source address 10.40.0.2](docs/images/nat-inside-wireshark.png)
+
+**Outside R3** · The packets use `198.51.100.1` in place of the private address.
+
+![Outside capture showing the translated address 198.51.100.1](docs/images/nat-outside-wireshark.png)
+
+</details>
+
+### Open the captures in Wireshark
+
+| Capture | Display filter | What to look for |
+| --- | --- | --- |
+| [Hospital-B-HTTP.pcapng](Hospital-B-HTTP.pcapng) | `tcp.port == 8080` or `rip` | HTTP exchange and the RIPv2 advertisement on the R2–R3 link. |
+| [NAT-PAT-Inside-R1-R3.pcapng](NAT-PAT-Inside-R1-R3.pcapng) | `icmp && ip.addr == 198.51.100.2` | Original internal source on the request and restored private destination on the reply. |
+| [NAT-PAT-Outside-R3-PC-External.pcapng](NAT-PAT-Outside-R3-PC-External.pcapng) | `icmp && ip.addr == 198.51.100.2` | The shared outside address on the translated request and incoming reply. |
+
+## Run the lab
+
+1. Clone the repository. The project was built with **GNS3 2.2.61** using the local server, Dynamips, and QEMU.
+2. Add your own authorized Cisco C3725 IOS image to GNS3. The project references `c3725-adventerprisek9-mz.124-15.T14.image`.
+3. Open [lab/proj-1.gns3](lab/proj-1.gns3). The two QEMU nodes reference paths from the original workstation. If needed, point them to your local `qemu-system-i386` executable and their respective disk files, `lab/images/Linux-Client.qcow2` and `lab/images/Web-Server.qcow2`.
+4. Start the nodes. The baseline puts `Linux-Client` on `SW-A-Staff` at `10.40.0.4/27` and `Web-Server` on `SW-Command` at `10.40.0.58/29`. For Hospital B's web test, move the client to `SW-B-Staff` and use `10.40.0.36/28` with gateway `10.40.0.33`.
+5. If needed, start the listener from the `Web-Server` console, then request the page from `Linux-Client`.
+
+```sh
+# Web-Server
+nc -lk -s 10.40.0.58 -p 8080 -e /opt/ie-http-response.sh &
+
+# Linux-Client
+wget -T 5 -O - http://10.40.0.58:8080/
 ```
 
-On `R3`, the external network was also added to `RIP`. The external interface is passive, so routing updates are not sent out to the external host:
+The expected response body is `Command Center is online`. On the routers, use `show ip route 10.40.0.58` for the current next hop and `show ip nat translations` on `R3` immediately after generating external traffic.
 
-```text
-router rip
- network 198.51.100.0
- passive-interface FastEthernet0/1
-```
+To repeat a failover test, use the router-link table to identify the two interfaces, disable one direct link, and compare the learned next hop and HTTP response with the baseline. Restore both interfaces and confirm metric 1 before testing the other link. The assignment evaluates these observations and their explanation in a live demonstration.
 
-**Link-failure and alternate-route tests remain outstanding.** Convergence time and connectivity during a failure must not be reported as measured until those tests are performed.
-
-### Web server and `HTTP` capture
-
-A lightweight response service ran on `Web-Server` at port `8080`. The client sent a `GET` request and the captured response contained `HTTP/1.0 200 OK`, content type `text/plain`, and the 25-byte body `Command Center is online`. The capture [Hospital-B-HTTP.pcapng](Hospital-B-HTTP.pcapng) records the request from Hospital B to the server.
-
-![GET request and 200 OK response on port 8080](docs/images/http-wireshark.png)
-
-Display filter used in `Wireshark`:
-
-```text
-tcp.port == 8080
-```
-
-### Simulated external network and `NAT/PAT`
-
-On `R3`, the internal interfaces were marked `ip nat inside`; the interface connected to `PC-External` was marked `ip nat outside`. An access list selects the four internal networks, and `overload` lets multiple flows share the outside interface address.
-
-Experiments included pings from an internal host to `PC-External` and a `TCP` request from `Linux-Client` to an external test web server on port `8080`. For the `TCP` test, `Web-Server` was temporarily moved to the external network and assigned `198.51.100.2`; the original topology was restored afterward. In the captured flow, source `10.40.0.4:59761` was translated to `198.51.100.1:59761`, and the destination was `198.51.100.2:8080`. Captures show the request and response on the inside and the translated address on the outside.
-
-![ICMP exchange on the inside of R3](docs/images/nat-inside-wireshark.png)
-
-![ICMP exchange on the outside of R3](docs/images/nat-outside-wireshark.png)
-
-![Example NAT translation table on R3](docs/images/nat-translations.png)
-
-![Successful ping from the external host to the R3 gateway](docs/images/external-ping.png)
-
-![Example TCP translation on R3](docs/images/pat-tcp-translation.png)
-
-Core `NAT/PAT` configuration on `R3`. The four access-list entries match the internal subnets in this design:
-
-```text
-interface FastEthernet0/0
- ip nat inside
-interface FastEthernet1/0
- ip nat inside
-interface FastEthernet2/0
- ip nat inside
-interface FastEthernet0/1
- ip nat outside
-exit
-access-list 10 permit 10.40.0.0 0.0.0.31
-access-list 10 permit 10.40.0.32 0.0.0.15
-access-list 10 permit 10.40.0.48 0.0.0.7
-access-list 10 permit 10.40.0.56 0.0.0.7
-ip nat inside source list 10 interface FastEthernet0/1 overload
-```
-
-`198.51.100.0/30` is a simulated test network, not a real Internet connection. In this simulated IOS environment, `no ip cef` was used after translations appeared without traffic passing. Treat this as a workaround specific to this lab, not as general advice for production networks.
-
-## Repository layout
+## Project files
 
 | Path | Contents |
-|---|---|
-| `lab/proj-1.gns3` | Main `GNS3` topology file |
-| `lab/images/` | Linux machine disks included in this repository |
-| `lab/project-files/` | Saved `GNS3` project and device configuration files |
-| `docs/Internet_Engineering_Progress_Report_FA.docx` | Detailed Persian report with steps, commands, and evidence |
-| `docs/IE_P1.pdf` | Project specification |
-| `docs/images/` | Topology and experiment images used on this page |
-| [Hospital-B-HTTP.pcapng](Hospital-B-HTTP.pcapng) | Hospital B web experiment capture |
-| [NAT-PAT-Inside-R1-R3.pcapng](NAT-PAT-Inside-R1-R3.pcapng) | Capture from the inside link of `R3` |
-| [NAT-PAT-Outside-R3-PC-External.pcapng](NAT-PAT-Outside-R3-PC-External.pcapng) | Capture from the outside link of `R3` |
-
-## Open and run the lab
-
-1. Install `GNS3 2.2.61` and clone this repository.
-2. Open `lab/proj-1.gns3` in `GNS3`.
-3. The lab uses a `Cisco C3725` router with `IOS 12.4(15)T14`. The IOS image is not included; configure the router template with an image you are authorized to use.
-4. The current topology file points to Linux disks under `C:/Users/user/GNS3/projects/proj/images/`. If that path does not exist on your computer, edit both `QEMU` nodes in `GNS3` and select their disk files from `lab/images/`.
-5. Start the routers and hosts. The Persian report at `docs/Internet_Engineering_Progress_Report_FA.docx` contains detailed commands and a step-by-step record.
-6. Open the supplied `pcapng` captures in `Wireshark`, or capture on the appropriate link while repeating an experiment.
-
-## Remaining work
-
-The next major task is to verify routing redundancy in the running lab:
-
-1. From the normal state, record reachability to `10.40.0.58` and routing tables on `R1`, `R2`, and `R3`.
-2. Shut down both ends of only the `R1–R3` link. Recheck the route and connectivity while `RIPv2` converges. Expected path: `R1` → `R2` → `R3`.
-3. Restore that link and confirm the normal state.
-4. Repeat separately for the `R2–R3` link. Expected path: `R2` → `R1` → `R3`.
-5. Record outage duration, time until replies resume, the new route, and packet-capture evidence. Do not infer these results from the topology alone.
-6. Add the verified failover evidence to the final report and presentation.
-
-## Full report and packet captures
-
-The detailed [project progress report](docs/Internet_Engineering_Progress_Report_FA.docx) documents the work sequence, full address plan, command explanations, evidence, troubleshooting, and remaining tests.
-
-Open the `pcapng` files in `Wireshark` to inspect individual packets. The images above provide a quick overview; the captures retain packet-level details.
+| --- | --- |
+| [lab/proj-1.gns3](lab/proj-1.gns3) | GNS3 project and topology. |
+| [lab/images/](lab/images/) | Tiny Core disks for the Linux client and web server. |
+| [lab/project-files/](lab/project-files/) | Saved router and VPCS configurations. |
+| [docs/IE_P1.pdf](docs/IE_P1.pdf) | Original assignment specification in Persian. |
+| [Final report](docs/Internet_Engineering_Final_Report_FA.docx) | Addressing, configuration, test results, and evidence, including both failover scenarios in sections 9–11. |
+| [docs/images/](docs/images/) | Screenshots from the lab and final report. |
